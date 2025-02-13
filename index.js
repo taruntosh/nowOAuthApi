@@ -16,7 +16,7 @@ const clients = new Map();
 // Initialize test client
 clients.set(process.env.CLIENT_ID, {
     clientSecret: process.env.CLIENT_SECRET,
-    redirectUris: ['https://your-servicenow-instance.service-now.com/oauth_callback.do']
+    redirectUris: ['https://dev242172.service-now.com/oauth_redirect.do']
 });
 
 // Generate random token
