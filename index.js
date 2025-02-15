@@ -6,8 +6,10 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Support form-urlencoded (ServiceNow option)
+app.use(express.json()); // Support JSON requests (in case ServiceNow sends JSON)
 
+// Storage for OAuth tokens and clients
 const authCodes = new Map();
 const tokens = new Map();
 const clients = new Map();
@@ -20,14 +22,15 @@ clients.set(process.env.CLIENT_ID, {
 const generateToken = () => crypto.randomBytes(32).toString('hex');
 
 const logRequest = (req) => {
-    console.log("=====================================");
+    console.log("\n========== 🛠 DEBUGGING STARTED 🛠 ==========");
     console.log(`📢 Incoming Request: ${req.method} ${req.originalUrl}`);
     console.log("🔹 Headers:", req.headers);
     console.log("🔹 Body:", req.body);
     console.log("🔹 Query Params:", req.query);
-    console.log("=====================================");
+    console.log("========== ✅ DEBUGGING ENDED ✅ ==========\n");
 };
 
+// 🔹 OAuth Authorization Endpoint (Step 1)
 app.get('/oauth/authorize', (req, res) => {
     logRequest(req);
     const { response_type, client_id, redirect_uri, scope, state } = req.query;
@@ -62,11 +65,32 @@ app.get('/oauth/authorize', (req, res) => {
     res.redirect(redirectUrl.toString());
 });
 
+// 🔹 OAuth Token Exchange Endpoint (Step 2)
 app.post('/oauth/token', (req, res) => {
     logRequest(req);
-    const { grant_type, client_id, client_secret, code, refresh_token } = req.body;
 
+    let { grant_type, code, refresh_token } = req.body;
+    let client_id, client_secret;
+
+    // 🔍 Debugging: Check the raw body received
+    console.log("🔍 Debug: Raw Body Data →", req.body);
+
+    // Extract client_id & client_secret from Basic Auth Header (if used)
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Basic ")) {
+        console.log("🔑 Extracting client credentials from Basic Auth Header...");
+        const base64Credentials = authHeader.split(" ")[1];
+        const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8");
+        [client_id, client_secret] = credentials.split(":");
+    } else {
+        console.log("📝 Extracting client credentials from Request Body...");
+        client_id = req.body.client_id;
+        client_secret = req.body.client_secret;
+    }
+
+    // Validate required parameters
     if (!grant_type || !client_id || !client_secret) {
+        console.log("❌ Missing required parameters in request.");
         return res.status(400).json({ error: 'invalid_request', message: 'Missing required parameters' });
     }
 
@@ -97,7 +121,7 @@ app.post('/oauth/token', (req, res) => {
         const refreshToken = generateToken();
         tokens.set(refreshToken, { clientId: client_id, scope: codeData.scope });
 
-        authCodes.delete(code); // Only delete after successful exchange
+        authCodes.delete(code);
 
         console.log(`✅ Issued Access Token: ${accessToken} for Client ID: ${client_id}`);
 
@@ -133,6 +157,7 @@ app.post('/oauth/token', (req, res) => {
     return res.status(400).json({ error: 'unsupported_grant_type', message: 'Invalid grant type provided' });
 });
 
+// 🔹 Middleware: Verify Token for Protected Routes
 const verifyToken = (req, res, next) => {
     logRequest(req);
     const authHeader = req.headers.authorization;
@@ -153,6 +178,7 @@ const verifyToken = (req, res, next) => {
     }
 };
 
+// 🔹 Protected API Endpoint
 app.get('/api/data', verifyToken, (req, res) => {
     res.json({ message: 'Protected data accessed successfully' });
 });
